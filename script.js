@@ -133,41 +133,135 @@
     cupraVortexParticles.appendChild(particle);
   }
 
-  // BALLON BLEU — a code-built couture football object connecting performance,
-  // national identity and the aerodynamic white fin of the campaign vehicle.
-  const fffBallRings = $('#fffBallRings');
-  const fffBallPanels = $('#fffBallPanels');
-  if (fffBallRings && fffBallPanels) {
-    const ringTransforms = [
-      'rotateX(0deg) rotateY(0deg)', 'rotateX(62deg) rotateY(0deg)',
-      'rotateX(-62deg) rotateY(0deg)', 'rotateX(28deg) rotateY(58deg)',
-      'rotateX(-28deg) rotateY(58deg)', 'rotateX(28deg) rotateY(-58deg)',
-      'rotateX(-28deg) rotateY(-58deg)'
+  // A real truncated-icosahedron football: twelve pentagons and twenty hexagons
+  // projected from 3D on every frame. It remains light enough for the long scroll edit.
+  const fffBallCanvas = $('#fffBallCanvas');
+  const fffFootballRenderer = (() => {
+    if (!fffBallCanvas) return () => {};
+    const ctx = fffBallCanvas.getContext('2d');
+    if (!ctx) return () => {};
+    const phi = (1 + Math.sqrt(5)) / 2;
+    const normalize = p => {
+      const length = Math.hypot(p.x, p.y, p.z) || 1;
+      return { x:p.x / length, y:p.y / length, z:p.z / length };
+    };
+    const vertices = [
+      [-1,phi,0],[1,phi,0],[-1,-phi,0],[1,-phi,0],
+      [0,-1,phi],[0,1,phi],[0,-1,-phi],[0,1,-phi],
+      [phi,0,-1],[phi,0,1],[-phi,0,-1],[-phi,0,1]
+    ].map(([x,y,z]) => normalize({x,y,z}));
+    const triangles = [
+      [0,11,5],[0,5,1],[0,1,7],[0,7,10],[0,10,11],
+      [1,5,9],[5,11,4],[11,10,2],[10,7,6],[7,1,8],
+      [3,9,4],[3,4,2],[3,2,6],[3,6,8],[3,8,9],
+      [4,9,5],[2,4,11],[6,2,10],[8,6,7],[9,8,1]
     ];
-    ringTransforms.forEach((transform, index) => {
-      const ring = document.createElement('i');
-      ring.style.transform = `${transform} translateZ(${index % 2 ? 2 : 5}px)`;
-      fffBallRings.appendChild(ring);
+    const neighbours = vertices.map(() => new Set());
+    triangles.forEach(([a,b,c]) => {
+      neighbours[a].add(b); neighbours[a].add(c);
+      neighbours[b].add(a); neighbours[b].add(c);
+      neighbours[c].add(a); neighbours[c].add(b);
     });
-    const panelTransforms = [
-      'translate(-50%,-50%) translateZ(var(--fff-radius))',
-      'translate(-50%,-50%) rotateY(72deg) translateZ(var(--fff-radius))',
-      'translate(-50%,-50%) rotateY(144deg) translateZ(var(--fff-radius))',
-      'translate(-50%,-50%) rotateY(216deg) translateZ(var(--fff-radius))',
-      'translate(-50%,-50%) rotateY(288deg) translateZ(var(--fff-radius))',
-      'translate(-50%,-50%) rotateX(58deg) rotateY(36deg) translateZ(var(--fff-radius))',
-      'translate(-50%,-50%) rotateX(58deg) rotateY(108deg) translateZ(var(--fff-radius))',
-      'translate(-50%,-50%) rotateX(58deg) rotateY(180deg) translateZ(var(--fff-radius))',
-      'translate(-50%,-50%) rotateX(-58deg) rotateY(72deg) translateZ(var(--fff-radius))',
-      'translate(-50%,-50%) rotateX(-58deg) rotateY(144deg) translateZ(var(--fff-radius))'
-    ];
-    panelTransforms.forEach((transform, index) => {
-      const panel = document.createElement('i');
-      panel.style.transform = transform;
-      panel.style.setProperty('--panel-index', index);
-      fffBallPanels.appendChild(panel);
+    const points = new Map();
+    const truncatedPoint = (from,to) => {
+      const key = `${from}-${to}`;
+      if (!points.has(key)) {
+        const a = vertices[from], b = vertices[to];
+        points.set(key, normalize({x:(2*a.x+b.x)/3,y:(2*a.y+b.y)/3,z:(2*a.z+b.z)/3}));
+      }
+      return points.get(key);
+    };
+    const orientFace = face => {
+      const a=face[0], b=face[1], c=face[2];
+      const ab={x:b.x-a.x,y:b.y-a.y,z:b.z-a.z};
+      const ac={x:c.x-a.x,y:c.y-a.y,z:c.z-a.z};
+      const normal={x:ab.y*ac.z-ab.z*ac.y,y:ab.z*ac.x-ab.x*ac.z,z:ab.x*ac.y-ab.y*ac.x};
+      const center=face.reduce((sum,p)=>({x:sum.x+p.x,y:sum.y+p.y,z:sum.z+p.z}),{x:0,y:0,z:0});
+      return normal.x*center.x+normal.y*center.y+normal.z*center.z < 0 ? [...face].reverse() : face;
+    };
+    const faces = triangles.map(([a,b,c],index) => ({
+      type:'hex', index, points:orientFace([truncatedPoint(a,b),truncatedPoint(b,a),truncatedPoint(b,c),truncatedPoint(c,b),truncatedPoint(c,a),truncatedPoint(a,c)])
+    }));
+    vertices.forEach((vertex,index) => {
+      const reference = Math.abs(vertex.y) < .9 ? {x:0,y:1,z:0} : {x:1,y:0,z:0};
+      const tangent = normalize({x:reference.y*vertex.z-reference.z*vertex.y,y:reference.z*vertex.x-reference.x*vertex.z,z:reference.x*vertex.y-reference.y*vertex.x});
+      const bitangent = {x:vertex.y*tangent.z-vertex.z*tangent.y,y:vertex.z*tangent.x-vertex.x*tangent.z,z:vertex.x*tangent.y-vertex.y*tangent.x};
+      const pentagon = [...neighbours[index]].map(n => truncatedPoint(index,n)).sort((p,q) => {
+        const pa={x:p.x-vertex.x,y:p.y-vertex.y,z:p.z-vertex.z};
+        const qa={x:q.x-vertex.x,y:q.y-vertex.y,z:q.z-vertex.z};
+        const ap=Math.atan2(pa.x*bitangent.x+pa.y*bitangent.y+pa.z*bitangent.z,pa.x*tangent.x+pa.y*tangent.y+pa.z*tangent.z);
+        const aq=Math.atan2(qa.x*bitangent.x+qa.y*bitangent.y+qa.z*bitangent.z,qa.x*tangent.x+qa.y*tangent.y+qa.z*tangent.z);
+        return ap-aq;
+      });
+      faces.push({type:'pent',index:20+index,points:orientFace(pentagon)});
     });
-  }
+    const rotate = (p,rx,ry,rz) => {
+      let {x,y,z}=p;
+      let c=Math.cos(rx),s=Math.sin(rx); [y,z]=[y*c-z*s,y*s+z*c];
+      c=Math.cos(ry);s=Math.sin(ry); [x,z]=[x*c+z*s,-x*s+z*c];
+      c=Math.cos(rz);s=Math.sin(rz); [x,y]=[x*c-y*s,x*s+y*c];
+      return {x,y,z};
+    };
+    return (rx=0,ry=0,rz=0) => {
+      const rect=fffBallCanvas.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      const dpr=Math.min(devicePixelRatio||1,2);
+      const width=Math.round(rect.width*dpr),height=Math.round(rect.height*dpr);
+      if (fffBallCanvas.width!==width || fffBallCanvas.height!==height) { fffBallCanvas.width=width; fffBallCanvas.height=height; }
+      ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,rect.width,rect.height);
+      const cx=rect.width/2,cy=rect.height/2,scale=Math.min(rect.width,rect.height)*.39;
+      const sphereRadius=Math.min(rect.width,rect.height)*.355;
+      const sphereBase=ctx.createRadialGradient(cx-sphereRadius*.35,cy-sphereRadius*.42,sphereRadius*.04,cx,cy,sphereRadius*1.08);
+      sphereBase.addColorStop(0,'#2865ff'); sphereBase.addColorStop(.38,'#073bd6'); sphereBase.addColorStop(.78,'#001c92'); sphereBase.addColorStop(1,'#000b55');
+      ctx.fillStyle=sphereBase; ctx.beginPath(); ctx.arc(cx,cy,sphereRadius,0,Math.PI*2); ctx.fill();
+      const projectedFaces=faces.map(face => {
+        const rotated=face.points.map(p=>rotate(p,rx,ry,rz));
+        const a=rotated[0],b=rotated[1],c=rotated[2];
+        const ab={x:b.x-a.x,y:b.y-a.y,z:b.z-a.z},ac={x:c.x-a.x,y:c.y-a.y,z:c.z-a.z};
+        const normal=normalize({x:ab.y*ac.z-ab.z*ac.y,y:ab.z*ac.x-ab.x*ac.z,z:ab.x*ac.y-ab.y*ac.x});
+        const depth=rotated.reduce((sum,p)=>sum+p.z,0)/rotated.length;
+        const path=rotated.map(p=>{const perspective=2.75/(3.15-p.z);return {x:cx+p.x*scale*perspective,y:cy-p.y*scale*perspective};});
+        return {...face,rotated,path,normal,depth};
+      }).filter(face=>face.normal.z>-.05).sort((a,b)=>a.depth-b.depth);
+      projectedFaces.forEach(face => {
+        const light=clamp(face.normal.x*-.28+face.normal.y*.42+face.normal.z*.78,-1,1);
+        const center=face.path.reduce((sum,p)=>({x:sum.x+p.x,y:sum.y+p.y}),{x:0,y:0}); center.x/=face.path.length; center.y/=face.path.length;
+        const inset=face.path.map(p=>({x:center.x+(p.x-center.x)*.895,y:center.y+(p.y-center.y)*.895}));
+        const drawPath=path=>{ctx.beginPath();path.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();};
+
+        drawPath(face.path);
+        ctx.lineJoin='round'; ctx.lineWidth=Math.max(4,rect.width*.0105); ctx.strokeStyle='rgba(0,7,72,.9)'; ctx.stroke();
+        ctx.lineWidth=Math.max(1,rect.width*.0025); ctx.strokeStyle='rgba(91,127,255,.24)'; ctx.stroke();
+
+        drawPath(inset);
+        const faceGradient=ctx.createRadialGradient(center.x-rect.width*.025,center.y-rect.height*.03,0,center.x,center.y,Math.max(24,rect.width*.115));
+        const lift=face.type==='pent' ? -9 : 5;
+        const bright=Math.round(clamp(54+light*42+lift,18,112));
+        faceGradient.addColorStop(0,`rgb(${Math.round(bright*.15)},${Math.round(bright*.62)},${Math.min(255,bright+145)})`);
+        faceGradient.addColorStop(.58,`rgb(0,${Math.round(bright*.42)},${Math.min(240,bright+98)})`);
+        faceGradient.addColorStop(1,`rgb(0,${Math.round(bright*.2)},${Math.min(180,bright+50)})`);
+        ctx.fillStyle=faceGradient;
+        ctx.shadowColor='rgba(0,2,45,.7)'; ctx.shadowBlur=Math.max(3,rect.width*.008); ctx.shadowOffsetY=Math.max(1,rect.width*.003); ctx.fill();
+        ctx.shadowColor='transparent'; ctx.shadowBlur=0; ctx.shadowOffsetY=0;
+        ctx.lineWidth=Math.max(.7,rect.width*.0017); ctx.strokeStyle='rgba(96,142,255,.44)'; ctx.stroke();
+
+        ctx.save(); drawPath(inset); ctx.clip();
+        ctx.globalAlpha=.12;
+        for (let grain=0; grain<12; grain++) {
+          const seed=Math.sin((face.index+1)*91.17+(grain+1)*37.41)*43758.5453;
+          const seed2=Math.sin((face.index+1)*53.73+(grain+1)*19.87)*24634.6345;
+          const gx=center.x+((seed-Math.floor(seed))-.5)*rect.width*.105;
+          const gy=center.y+((seed2-Math.floor(seed2))-.5)*rect.height*.105;
+          ctx.strokeStyle=grain%3===0?'rgba(255,255,255,.65)':'rgba(0,0,45,.5)';
+          ctx.lineWidth=Math.max(.35,rect.width*.00055); ctx.beginPath(); ctx.moveTo(gx,gy); ctx.quadraticCurveTo(gx+2,gy-1,gx+4,gy+.5); ctx.stroke();
+        }
+        ctx.restore(); ctx.globalAlpha=1;
+      });
+      const shine=ctx.createRadialGradient(cx-rect.width*.13,cy-rect.height*.17,0,cx-rect.width*.13,cy-rect.height*.17,rect.width*.37);
+      shine.addColorStop(0,'rgba(255,255,255,.3)'); shine.addColorStop(.2,'rgba(255,255,255,.075)'); shine.addColorStop(1,'rgba(255,255,255,0)');
+      ctx.globalCompositeOperation='screen'; ctx.fillStyle=shine; ctx.beginPath(); ctx.arc(cx,cy,Math.min(rect.width,rect.height)*.36,0,Math.PI*2); ctx.fill(); ctx.globalCompositeOperation='source-over';
+    };
+  })();
 
   // Ambient pointer influence on logo
   let logoMouseX = 0, logoMouseY = 0;
@@ -221,9 +315,9 @@
         ['assets/cupra-fortnite-pilot-suv.png','wide','Player 02 / SUV hero']
       ]
     },
-    product: {
-      kicker: 'PRODUCT / 3D / BRAND STORYTELLING',
-      title: 'OBJECT TO IDENTITY',
+    'object-experience': {
+      kicker: 'I DESIGN EXPERIENCES / PRODUCT + 3D + BRAND STORYTELLING',
+      title: 'OBJECT TO EXPERIENCE',
       description: 'A technical footwear concept developed beyond form into a full product ecosystem: Alias surfacing, material definition, visualization, graphic language and campaign imagery. The product is the beginning; the identity completes the experience.',
       tags: ['INDUSTRIAL DESIGN', 'AUTODESK ALIAS', 'CMF', 'PRODUCT VISUALIZATION', 'BRANDING'],
       media: [
@@ -298,9 +392,9 @@
   // V1 content manifest. Each project has one narrative home so the journey
   // can grow without recycling the same case study in multiple chapters.
   Object.assign(projects, {
-    industrial: {
-      kicker: 'I DESIGN EXPERIENCES / INDUSTRIAL DESIGN + DIGITAL CRAFT',
-      title: 'OBJECT TO EXPERIENCE',
+    'digital-craft': {
+      kicker: 'I DESIGN EXPERIENCES / DIGITAL CRAFT + INDUSTRIAL DESIGN',
+      title: 'DIGITAL CRAFT',
       description: 'Physical products are experienced through proportion, touch, use, material and identity. This selection connects industrial design discipline with the digital assets and visual systems that carry an object into culture.',
       tags: ['INDUSTRIAL DESIGN', '3D DEVELOPMENT', 'CMF', 'DIGITAL ASSETS', 'BRAND LANGUAGE'],
       media: [
@@ -365,14 +459,14 @@
       ]
     },
     future: {
-      kicker: 'DESIGNING THE FUTURE / FLEXIBLE CONTENT CHAPTER',
-      title: 'NEW RELATIONSHIPS, NOT NEW STYLES',
-      description: 'This chapter is deliberately prepared for the next material: real-time worlds, Unreal Engine work, generative assets, AI-native workflows, digital twins and new forms of collaboration. The current visuals establish the rhythm while the evidence is curated.',
-      tags: ['REAL-TIME', 'UNREAL ENGINE', 'GENERATIVE ASSETS', 'AI WORKFLOWS', 'COLLABORATION'],
+      kicker: 'DESIGN THE FUTURE / HONOR THE PAST',
+      title: 'VELOCITÀ FUTURA',
+      description: 'A racing-eyewear campaign that translates Cinelli’s visual memory into a future-facing product world. Heritage becomes material, color, speed and a new object of desire.',
+      tags: ['PRODUCT STORY', 'HERITAGE', 'CAMPAIGN', 'INDUSTRIAL DESIGN', 'CULTURE'],
       media: [
-        ['assets/mobility-vehicle.webp', 'wide', 'Placeholder direction / real-time product world'],
-        ['assets/wheel-aero.webp', '', 'Placeholder direction / generative asset craft'],
-        ['assets/product-stero-logo.webp', '', 'Placeholder direction / identity in motion']
+        ['assets/cinelli-aero-visor-product.jpg', '', 'Aero Visor / future-facing product hero'],
+        ['assets/cinelli-aero-visor-rider.jpg', '', 'Racing memory / campaign in motion'],
+        ['assets/cinelli-aero-visor-hero.jpg', '', 'Aero Visor / frontal campaign hero']
       ]
     }
   });
@@ -477,6 +571,8 @@
   const fffMovement = $('#fffMovement');
   const fffOrbScene = $('#fffOrbScene');
   const fffBall = $('#fffBall');
+  const fffBallObject = $('.fff-ball__object', fffBall);
+  const fffCrest = $('#fffCrest');
   const fffOrbCopy = $('#fffOrbCopy');
   const fffOrbFlare = $('#fffOrbFlare');
   const fffSlides = $('#fffSlides');
@@ -533,10 +629,11 @@
   const journeyProgress = $('#journeyProgress');
   const journeyCount = $('#journeyCount');
   const journeyRanges = [
-    [.13, .17, .29, .32],
-    [.33, .37, .50, .53],
-    [.54, .58, .71, .74],
-    [.75, .79, .965, .995]
+    [.10, .12, .245, .265],
+    [.28, .30, .425, .445],
+    [.46, .48, .605, .625],
+    [.64, .66, .785, .805],
+    [.82, .84, .975, .995]
   ];
   const acgExperience = $('#acgExperience');
   const acgFrame = $('#acgFrame');
@@ -976,6 +1073,9 @@
       narrativeRail.style.setProperty('--rail-progress', `${journeyProgress * 100}%`);
       narrativeRail.dataset.active = activeNarrative;
       narrativeRail.classList.toggle('is-visible', activeNarrative !== 'signal' && sy > innerHeight * 1.15 && !indexIsOpen);
+      const fffRect = fffMovement?.getBoundingClientRect();
+      const fffOwnsFrame = Boolean(fffRect && fffRect.top <= activationLine && fffRect.bottom > activationLine);
+      narrativeRail.classList.toggle('is-section-suppressed', fffOwnsFrame);
       narrativePoints.forEach(point => point.classList.toggle('is-active', point.dataset.narrativePoint === activeNarrative));
       if (narrativeRailProgress) narrativeRailProgress.style.height = innerWidth > 900 ? `${journeyProgress * 100}%` : '100%';
     }
@@ -1117,40 +1217,48 @@
     smoothedLogoMouseX = damp(smoothedLogoMouseX, logoMouseX, 6, deltaSeconds);
     smoothedLogoMouseY = damp(smoothedLogoMouseY, logoMouseY, 6, deltaSeconds);
     const cp = smoothedCupraProgress;
-    const logoOpacity = holdFade(cp, -.01, 0, .425, .47);
+    const logoOpacity = holdFade(cp, -.01, 0, .49, .525);
     cupraLogoScene.style.opacity = logoOpacity;
     cupraLogoScene.style.transform = `scale(${lerp(.94, 1.03, smooth(map(cp, 0, .15)))})`;
 
     // Establish the original monumental CUPRA artifact before the crossover begins.
-    const intertwine = smooth(map(cp, .15, .36));
+    const intertwine = smooth(map(cp, .15, .355));
+    const collapse = smooth(map(cp, .355, .455));
     const orbitRadius = Math.sin(intertwine * Math.PI) * Math.min(innerWidth * .3, 470);
-    const orbitPhase = lerp(-.35, 10.9, intertwine);
+    const orbitPhase = lerp(-.35, 10.9, intertwine) + collapse * Math.PI * 2.15;
     const cupraX = Math.cos(orbitPhase) * orbitRadius;
     const cupraY = Math.sin(orbitPhase) * orbitRadius * .43;
     const fortniteX = Math.cos(orbitPhase + Math.PI) * orbitRadius;
     const fortniteY = Math.sin(orbitPhase + Math.PI) * orbitRadius * .43;
-    const depth = Math.sin(orbitPhase) * 150;
-    const rotY = lerp(0, 325, intertwine) + smoothedLogoMouseX;
-    const rotX = lerp(4, -8, intertwine) - smoothedLogoMouseY;
-    cupraLogo.style.transform = `translate3d(${cupraX}px,${cupraY}px,${depth}px) rotateX(${rotX}deg) rotateY(${rotY}deg) rotateZ(${intertwine * 196}deg) scale(${lerp(1.18, .92, intertwine)})`;
-    fortniteLogoScene.style.transform = `translate3d(${fortniteX}px,${fortniteY}px,${-depth}px) rotateX(${-rotX * .55}deg) rotateY(${-rotY * .88}deg) rotateZ(${-orbitPhase * 15}deg) scale(${lerp(.62, 1, intertwine)})`;
-    const pairOpacity = 1 - smooth(map(cp, .385, .425));
+    const depth = Math.sin(orbitPhase) * 150 * (1 - collapse);
+    const rotY = lerp(0, 325, intertwine) + collapse * 690 + smoothedLogoMouseX * (1 - collapse);
+    const rotX = lerp(4, -8, intertwine) + collapse * 76 - smoothedLogoMouseY * (1 - collapse);
+    const cupraScale = lerp(lerp(1.18, .92, intertwine), .025, collapse);
+    const fortniteScale = lerp(lerp(.62, 1, intertwine), .025, collapse);
+    cupraLogo.style.transform = `translate3d(${cupraX * (1 - collapse)}px,${cupraY * (1 - collapse)}px,${depth}px) rotateX(${rotX}deg) rotateY(${rotY}deg) rotateZ(${intertwine * 196 + collapse * 315}deg) scale(${cupraScale})`;
+    fortniteLogoScene.style.transform = `translate3d(${fortniteX * (1 - collapse)}px,${fortniteY * (1 - collapse)}px,${-depth}px) rotateX(${-rotX * .55 - collapse * 48}deg) rotateY(${-rotY * .88}deg) rotateZ(${-orbitPhase * 15 - collapse * 270}deg) scale(${fortniteScale})`;
+    const pairOpacity = 1 - smooth(map(cp, .432, .458));
     cupraLogo.style.opacity = pairOpacity;
     fortniteLogoScene.style.opacity = smooth(map(cp, .11, .16)) * pairOpacity;
     cupraLogoCopy.style.opacity = holdFade(cp, .13, .17, .31, .35);
-    const orbitOpacity = 1 - smooth(map(cp, .36, .41));
+    const orbitOpacity = 1 - smooth(map(cp, .355, .435));
     cupraOrbits.forEach(orbit => { orbit.style.opacity = orbitOpacity; });
-    cupraVortex.style.opacity = holdFade(cp, .15, .18, .37, .41);
-    cupraVortex.style.transform = `translate(-50%,-50%) rotate(${orbitPhase * 36}deg) scale(${lerp(.62, 1.45, intertwine)})`;
-    cupraCrossoverFlare.style.opacity = holdFade(cp, .405, .425, .445, .47);
-    cupraCrossoverFlare.style.transform = `translate(-50%,-50%) scale(${lerp(.2, 1.2, smooth(map(cp, .40, .46)))}) rotate(${lerp(-45, 0, intertwine)}deg)`;
+    cupraVortex.style.opacity = holdFade(cp, .15, .18, .415, .465);
+    cupraVortex.style.transform = `translate(-50%,-50%) rotate(${orbitPhase * 36}deg) scale(${lerp(.62, 1.45, intertwine) * lerp(1, .12, collapse)})`;
 
-    const slidesOpacity = holdFade(cp, .45, .47, .87, .89);
+    // Both identities now finish their rotation while contracting into the crossover
+    // mark. The isolated cross is deliberately held before the campaign reveal.
+    const crossArrival = smooth(map(cp, .405, .457));
+    const crossPulse = 1 + Math.sin(smooth(map(cp, .445, .49)) * Math.PI) * .1;
+    cupraCrossoverFlare.style.opacity = holdFade(cp, .405, .445, .49, .525);
+    cupraCrossoverFlare.style.transform = `translate(-50%,-50%) scale(${lerp(.06, 1, crossArrival) * crossPulse}) rotate(${lerp(-70, 0, crossArrival)}deg)`;
+
+    const slidesOpacity = holdFade(cp, .495, .515, .895, .91);
     cupraSlides.style.opacity = slidesOpacity;
     const slideRanges = [
-      [.46, .48, .585, .60],
-      [.60, .615, .72, .735],
-      [.735, .75, .855, .87]
+      [.505, .525, .625, .64],
+      [.64, .655, .755, .77],
+      [.77, .785, .88, .895]
     ];
     let activeIndex = 0;
     cupraSlideEls.forEach((slide, i) => {
@@ -1161,8 +1269,8 @@
       img.style.transform = 'none';
       if (op > .5) activeIndex = i;
     });
-    cupraCounter.textContent = cp < .46 ? '00' : String(activeIndex + 1).padStart(2, '0');
-    const endOpacity = smooth(map(cp, .89, .93));
+    cupraCounter.textContent = cp < .505 ? '00' : String(activeIndex + 1).padStart(2, '0');
+    const endOpacity = smooth(map(cp, .91, .95));
     cupraEndcopy.style.opacity = endOpacity;
     cupraEndcopy.style.pointerEvents = endOpacity > .7 ? 'auto' : 'none';
 
@@ -1177,8 +1285,8 @@
       movementIntro.style.setProperty('--movement-ball-x', `${lerp(48,78,movementEase)}%`);
     }
 
-    // FFF × Jacquemus: a couture football object resolves into six ultra-blue
-    // campaign tableaux. Pointer influence remains subtle; scroll directs the edit.
+    // FFF × Jacquemus: a dimensional football and sculptural federation crest
+    // orbit one another before resolving into three paired ultra-blue tableaux.
     if (fffMovement) {
       const targetFffProgress = sectionProgress(fffMovement);
       smoothedFffProgress = damp(smoothedFffProgress, targetFffProgress, 6.2, deltaSeconds);
@@ -1188,13 +1296,37 @@
       const fffPointerY = smoothedLogoMouseY * .58;
 
       const orbOpacity = holdFade(fp, -.01, 0, .275, .315);
-      const orbArrival = smooth(map(fp, .01, .10));
-      const orbResolve = smooth(map(fp, .18, .29));
-      const orbSpin = lerp(-24, 338, smooth(map(fp, .02, .29)));
+      const orbArrival = smooth(map(fp, .01, .105));
+      const orbResolve = smooth(map(fp, .205, .29));
+      const pairMotion = smooth(map(fp, .035, .255));
+      const pairExit = smooth(map(fp, .255, .305));
+      const pairOpacity = orbArrival * (1 - smooth(map(fp,.275,.305)));
+      const orbSpin = lerp(-28, 286, pairMotion);
+      const pairAngle = lerp(-.65, 1.18, pairMotion) * Math.PI;
+      const sharedOrbitX = Math.sin(pairAngle) * 1.15;
+      const sharedOrbitY = Math.cos(pairAngle) * .8;
+      const convergence = Math.sin(pairMotion * Math.PI) * 4.25;
+      const pairSpread = lerp(20.5, 17.5, pairMotion);
+      const ballOrbitX = sharedOrbitX - pairSpread * .5 + convergence;
+      const crestOrbitX = sharedOrbitX + pairSpread * .5 - convergence;
+      const ballOrbitY = sharedOrbitY + Math.sin(pairMotion * Math.PI * 2) * .7;
+      const crestOrbitY = sharedOrbitY - Math.sin(pairMotion * Math.PI * 2) * .7;
+      const depthExchange = Math.sin(pairMotion * Math.PI * 2) * 42;
+      const pairScaleOut = lerp(1, .24, pairExit);
       fffOrbScene.style.opacity = String(orbOpacity);
       fffOrbScene.style.transform = `scale(${lerp(.95,1.025,orbArrival)})`;
-      fffBall.style.opacity = String(1 - smooth(map(fp,.275,.305)));
-      fffBall.style.transform = `translate3d(-50%,-50%,${lerp(-220,80,orbArrival)}px) rotateX(${lerp(18,-8,orbArrival) - fffPointerY}deg) rotateY(${orbSpin + fffPointerX}deg) rotateZ(${lerp(-12,8,orbResolve)}deg) scale(${lerp(.56,1.06,orbArrival) * lerp(1,.3,orbResolve)})`;
+      fffBall.style.opacity = String(pairOpacity);
+      fffBall.style.transform = `translate3d(calc(-50% + ${ballOrbitX}vw),calc(-50% + ${ballOrbitY}vh),${lerp(-190,72,orbArrival) + depthExchange}px) rotateZ(${lerp(-7,5,pairMotion)}deg) scale(${lerp(.66,1,orbArrival) * pairScaleOut})`;
+      const footballRx = (lerp(-18,34,smooth(map(fp,.01,.29))) - fffPointerY) * Math.PI / 180;
+      const footballRy = (orbSpin + fffPointerX) * Math.PI / 180;
+      fffFootballRenderer(footballRx,footballRy,lerp(-9,16,orbResolve)*Math.PI/180);
+      if (fffBallObject) {
+        fffBallObject.style.transform = `rotateX(${lerp(-9,11,pairMotion) - fffPointerY*.22}deg) rotateY(${lerp(-14,22,pairMotion) + fffPointerX*.26}deg) rotateZ(${lerp(-5,4,pairMotion)}deg)`;
+      }
+      if (fffCrest) {
+        fffCrest.style.opacity = String(pairOpacity);
+        fffCrest.style.transform = `translate3d(calc(-50% + ${crestOrbitX}vw),calc(-50% + ${crestOrbitY}vh),${lerp(-205,64,orbArrival) - depthExchange}px) rotateX(${lerp(-18,7,pairMotion) - fffPointerY*.28}deg) rotateY(${lerp(27,-9,pairMotion) + fffPointerX*.34}deg) rotateZ(${lerp(9,-4,pairMotion)}deg) scale(${lerp(.65,1,orbArrival) * pairScaleOut})`;
+      }
       fffOrbCopy.style.opacity = String(holdFade(fp,.06,.09,.205,.245));
       fffOrbCopy.style.transform = `translate3d(${lerp(-4,0,smooth(map(fp,.04,.11)))}vw,${lerp(20,-14,smooth(map(fp,.08,.25)))}px,0)`;
       fffOrbits.forEach((orbit,index) => {
@@ -1207,12 +1339,9 @@
       const fffSlidesOpacity = holdFade(fp,.305,.325,.90,.925);
       fffSlides.style.opacity = String(fffSlidesOpacity);
       const fffSlideRanges = [
-        [.31,.325,.395,.41],
-        [.41,.425,.50,.515],
-        [.515,.53,.605,.62],
-        [.62,.635,.71,.725],
-        [.725,.74,.815,.83],
-        [.83,.845,.90,.915]
+        [.31,.325,.485,.50],
+        [.50,.515,.68,.695],
+        [.695,.71,.90,.915]
       ];
       let activeFffIndex = -1;
       fffSlideEls.forEach((slide,index) => {
@@ -1221,8 +1350,10 @@
         const local = smooth(map(fp,range[0],range[3]));
         slide.style.opacity = String(opacity);
         slide.style.pointerEvents = opacity > .56 ? 'auto' : 'none';
-        const image = $('img',slide);
-        image.style.transform = `scale(${lerp(1.065,1.005,local)}) translate3d(${lerp(1.5,-1.2,local)}%,0,0)`;
+        $$('img',slide).forEach((image,imageIndex) => {
+          const direction = imageIndex ? -1 : 1;
+          image.style.transform = `scale(${lerp(1.018,1,local)}) translate3d(${lerp(direction*.7,direction*-.35,local)}%,0,0)`;
+        });
         if (opacity > .48) activeFffIndex = index;
       });
       fffCounter.textContent = activeFffIndex < 0 ? '00' : String(activeFffIndex + 1).padStart(2,'0');
@@ -1256,24 +1387,32 @@
       }
     }
 
-    // Designing the Journey extends Gramicci into four distinct campaign destinations.
+    // Designing the Journey extends Gramicci into five distinct campaign destinations.
     if (journeySection) {
       const jp = easedSectionProgress(journeySection, deltaSeconds, 7);
       const introOpacity = holdFade(jp, 0, .02, .10, .125);
       journeyIntro.style.opacity = introOpacity;
       journeyIntro.style.transform = `translate3d(0,${lerp(0,-38,smooth(map(jp,.03,.15)))}px,0) scale(${lerp(1,.97,smooth(map(jp,.03,.15)))})`;
 
-      let activeJourney = jp < .12 ? -1 : 0;
+      let activeJourney = -1;
+      if (jp >= .095) {
+        activeJourney = 0;
+        journeyRanges.forEach((range, index) => {
+          if (jp >= range[0]) activeJourney = index;
+        });
+      }
       journeyStops.forEach((stop, index) => {
         const range = journeyRanges[index];
         const opacity = holdFade(jp, ...range);
-        const localProgress = smooth(map(jp, range[0], range[3]));
+        const arrival = smooth(map(jp, range[0], range[1]));
+        const departure = smooth(map(jp, range[2], range[3]));
         stop.style.opacity = opacity;
         stop.style.pointerEvents = opacity > .58 ? 'auto' : 'none';
-        stop.style.transform = `translate3d(${lerp(7,-5,localProgress)}vw,${lerp(24,-18,localProgress)}px,0) scale(${lerp(.97,1.015,localProgress)})`;
+        stop.style.transform = `translate3d(${lerp(7,0,arrival) + lerp(0,-5,departure)}vw,${lerp(24,0,arrival) + lerp(0,-18,departure)}px,0) scale(${lerp(.97,1,arrival) + lerp(0,.015,departure)})`;
         $$('.journey-frame', stop).forEach((frame, frameIndex) => {
           const direction = frameIndex % 2 ? -1 : 1;
-          frame.style.transform = `translate3d(0,${direction * lerp(18,-10,localProgress)}px,0)`;
+          const frameOffset = lerp(18,0,arrival) + lerp(0,-10,departure);
+          frame.style.transform = `translate3d(0,${direction * frameOffset}px,0)`;
         });
         if (opacity > .45) activeJourney = index;
       });
@@ -1281,7 +1420,7 @@
       const visibleJourney = Math.max(0, activeJourney);
       journeySection.dataset.active = String(visibleJourney);
       journeyButtons.forEach((button, index) => button.classList.toggle('is-active', index === activeJourney));
-      journeyProgress.style.width = `${smooth(map(jp,.12,.98)) * 100}%`;
+      journeyProgress.style.width = `${smooth(map(jp,.10,.995)) * 100}%`;
       journeyCount.textContent = activeJourney < 0 ? '00' : String(activeJourney + 1).padStart(2,'0');
     }
 
