@@ -1,0 +1,44 @@
+name: Publish portfolio package
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    if: startsWith(github.event.release.name, 'Portfolio Upload')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download portfolio package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/portfolio-upload"
+          gh release download "${{ github.event.release.tag_name }}" \
+            --pattern "alexandre-digital-creative-director-v1-45-movement-github-ready.zip" \
+            --dir "$RUNNER_TEMP/portfolio-upload"
+
+      - name: Extract and publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          extract_dir="$RUNNER_TEMP/portfolio-extract"
+          mkdir -p "$extract_dir"
+          unzip -q "$RUNNER_TEMP/portfolio-upload/alexandre-digital-creative-director-v1-45-movement-github-ready.zip" -d "$extract_dir"
+          source_dir="$extract_dir/alexandre-digital-creative-director-v1-45-movement-github-ready"
+
+          find . -mindepth 1 -maxdepth 1 ! -name '.git' ! -name '.github' -exec rm -rf {} +
+          cp -a "$source_dir"/. .
+          rm -rf .github
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Publish digital creative director portfolio"
+          git push origin HEAD:main
